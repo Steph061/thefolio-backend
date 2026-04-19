@@ -15,14 +15,10 @@ const app = express();
 
 // The pg pool auto-connects when imported by route files. No connectDB() call is needed.
 app.use(cors({
-    origin: 'https://thefolio-frontend-ten.vercel.app',  // Your exact Vercel URL
+    origin: '*',  // Allow all origins (for testing only)
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
-// Handle preflight requests manually (optional but good)
-app.options('*', cors());
 
 // Parse incoming JSON request bodies
 app.use(express.json());

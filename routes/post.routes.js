@@ -36,6 +36,21 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// GET /api/posts/mine — Authenticated user posts
+router.get('/mine', protect, memberOrAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT p.*, u.name AS author_name, u.profile_pic AS author_pic
+      FROM posts p JOIN users u ON p.author_id = u.id
+      WHERE p.author_id = $1 ORDER BY p.created_at DESC`,
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // POST /api/posts
 router.post('/', protect, memberOrAdmin, upload.single('image'), async (req, res) => {
   try {

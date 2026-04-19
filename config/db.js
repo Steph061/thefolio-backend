@@ -9,7 +9,7 @@ const pool = new Pool({
 pool.query('SELECT NOW()', (err, res) => {
   if (err) {
     console.error('Database connection failed:', err.message);
-    process.exit(1);
+    // Don't exit here, let the app handle it
   } else {
     console.log('PostgreSQL Connected:', res.rows[0].now);
   }

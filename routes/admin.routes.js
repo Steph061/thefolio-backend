@@ -73,4 +73,23 @@ router.get('/messages', async (req, res) => {
   }
 });
 
+// GET /api/admin/stats
+router.get('/stats', async (req, res) => {
+  try {
+    const usersCount = await pool.query("SELECT COUNT(*) FROM users WHERE role != 'admin'");
+    const activeCount = await pool.query("SELECT COUNT(*) FROM users WHERE role != 'admin' AND status = 'active'");
+    const postsCount = await pool.query('SELECT COUNT(*) FROM posts');
+    const messagesCount = await pool.query('SELECT COUNT(*) FROM messages');
+
+    res.json({
+      totalMembers: parseInt(usersCount.rows[0].count, 10),
+      activeMembers: parseInt(activeCount.rows[0].count, 10),
+      totalPosts: parseInt(postsCount.rows[0].count, 10),
+      totalMessages: parseInt(messagesCount.rows[0].count, 10),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 module.exports = router;

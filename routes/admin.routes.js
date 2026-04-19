@@ -1,6 +1,8 @@
 // backend/routes/admin.routes.js
 const express = require('express');
-const pool = require('../config/db');
+const User = require('../models/User');
+const Post = require('../models/Post');
+const Message = require('../models/Message');
 const { protect } = require('../middleware/auth.middleware');
 const { adminOnly } = require('../middleware/role.middleware');
 
@@ -11,10 +13,10 @@ router.use(protect, adminOnly);
 // GET /api/admin/users
 router.get('/users', async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT id, name, email, role, status, created_at FROM users WHERE role != 'admin' ORDER BY created_at DESC"
-    );
-    res.json(result.rows);
+    const users = await User.find({ role: { $ne: 'admin' } })
+      .select('name email role status createdAt')
+      .sort({ createdAt: -1 });
+    res.json(users);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -23,15 +25,25 @@ router.get('/users', async (req, res) => {
 // PUT /api/admin/users/:id/status
 router.put('/users/:id/status', async (req, res) => {
   try {
-    const user = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
-    if (user.rows.length === 0 || user.rows[0].role === 'admin')
+    const user = await User.findById(req.params.id);
+    if (!user || user.role === 'admin') {
       return res.status(404).json({ message: 'User not found' });
-    const newStatus = user.rows[0].status === 'active' ? 'inactive' : 'active';
-    const result = await pool.query(
-      'UPDATE users SET status=$1, updated_at=CURRENT_TIMESTAMP WHERE id=$2 RETURNING id,name,email,role,status',
-      [newStatus, req.params.id]
-    );
-    res.json({ message: `User is now ${newStatus}`, user: result.rows[0] });
+    }
+
+    const newStatus = user.status === 'active' ? 'inactive' : 'active';
+    user.status = newStatus;
+    await user.save();
+
+    res.json({
+      message: `User is now ${newStatus}`,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status
+      }
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -40,10 +52,10 @@ router.put('/users/:id/status', async (req, res) => {
 // GET /api/admin/posts
 router.get('/posts', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT p.*, u.name AS author_name, u.email AS author_email
-      FROM posts p JOIN users u ON p.author_id = u.id ORDER BY p.created_at DESC` );
-    res.json(result.rows);
+    const posts = await Post.find({})
+      .populate('author', 'name email')
+      .sort({ createdAt: -1 });
+    res.json(posts);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -52,12 +64,17 @@ router.get('/posts', async (req, res) => {
 // PUT /api/admin/posts/:id/remove
 router.put('/posts/:id/remove', async (req, res) => {
   try {
-    const result = await pool.query(
-      "UPDATE posts SET status='removed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING*",
-      [req.params.id]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ message: 'Post not found' });
-    res.json({ message: 'Post has been removed', post: result.rows[0] });
+    const post = await Post.findByIdAndUpdate(
+      req.params.id,
+      { status: 'removed' },
+      { new: true }
+    ).populate('author', 'name email');
+
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    res.json({ message: 'Post has been removed', post });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -66,8 +83,8 @@ router.put('/posts/:id/remove', async (req, res) => {
 // GET /api/admin/messages
 router.get('/messages', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM messages ORDER BY created_at DESC');
-    res.json(result.rows);
+    const messages = await Message.find({}).sort({ createdAt: -1 });
+    res.json(messages);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -76,16 +93,19 @@ router.get('/messages', async (req, res) => {
 // GET /api/admin/stats
 router.get('/stats', async (req, res) => {
   try {
-    const usersCount = await pool.query("SELECT COUNT(*) FROM users WHERE role != 'admin'");
-    const activeCount = await pool.query("SELECT COUNT(*) FROM users WHERE role != 'admin' AND status = 'active'");
-    const postsCount = await pool.query('SELECT COUNT(*) FROM posts');
-    const messagesCount = await pool.query('SELECT COUNT(*) FROM messages');
+    const totalMembers = await User.countDocuments({ role: { $ne: 'admin' } });
+    const activeMembers = await User.countDocuments({
+      role: { $ne: 'admin' },
+      status: 'active'
+    });
+    const totalPosts = await Post.countDocuments({});
+    const totalMessages = await Message.countDocuments({});
 
     res.json({
-      totalMembers: parseInt(usersCount.rows[0].count, 10),
-      activeMembers: parseInt(activeCount.rows[0].count, 10),
-      totalPosts: parseInt(postsCount.rows[0].count, 10),
-      totalMessages: parseInt(messagesCount.rows[0].count, 10),
+      totalMembers,
+      activeMembers,
+      totalPosts,
+      totalMessages,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

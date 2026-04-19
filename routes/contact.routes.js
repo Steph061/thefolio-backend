@@ -1,5 +1,6 @@
+// backend/routes/contact.routes.js
 const express = require('express');
-const pool = require('../config/db');
+const Message = require('../models/Message');
 
 const router = express.Router();
 
@@ -11,10 +12,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Name, email, and message are required.' });
     }
 
-    await pool.query(
-      'INSERT INTO messages (name, email, message) VALUES ($1, $2, $3)',
-      [name, email, message]
-    );
+    await Message.create({
+      name,
+      email,
+      message
+    });
 
     res.status(201).json({ message: 'Message received successfully.' });
   } catch (err) {

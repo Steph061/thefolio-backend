@@ -1,8 +1,6 @@
 // backend/middleware/auth.middleware.js
 const jwt = require('jsonwebtoken');
-// OLD: const User = require('../models/User');
-// NEW: use pool directly
-const pool = require('../config/db');
+const User = require('../models/User');
 
 const protect = async (req, res, next) => {
   let token;
@@ -20,23 +18,26 @@ const protect = async (req, res, next) => {
     // Verify the token using your JWT_SECRET
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // OLD: req.user = await User.findById(decoded.id).select('-password');
-    // NEW: SQL query that excludes password column
-    const result = await pool.query(
-      'SELECT id, name, email, role, status, bio, profile_pic FROM users WHERE id = $1',
-      [decoded.id]
-    );
+    req.user = await User.findById(decoded.id);
 
-    if (result.rows.length === 0 || result.rows[0].status === 'inactive') {
-      return res.status(401).json({ message: 'Account not found or deactivated' });
+    if (!req.user || req.user.status === 'inactive') {
+      return res.status(401).json({ message: 'Not authorized — account deactivated' });
     }
 
-    req.user = result.rows[0];
-
-    next(); // Pass to the next handler
-  } catch (err) {
-    return res.status(401).json({ message: 'Token is invalid or has expired' });
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Not authorized — invalid token' });
   }
 };
 
-module.exports = { protect };
+const adminOnly = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') return next();
+  return res.status(403).json({ message: 'Access denied — Admins only' });
+};
+
+const memberOrAdmin = (req, res, next) => {
+  if (req.user && (req.user.role === 'member' || req.user.role === 'admin')) return next();
+  return res.status(403).json({ message: 'Access denied — Members only' });
+};
+
+module.exports = { protect, adminOnly, memberOrAdmin };

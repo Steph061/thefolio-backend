@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
+const connectDB = require('./config/db');
 
 const authRoutes = require('./routes/auth.routes');
 const postRoutes = require('./routes/post.routes');
@@ -9,9 +10,12 @@ const commentRoutes = require('./routes/comment.routes');
 const contactRoutes = require('./routes/contact.routes');
 const adminRoutes = require('./routes/admin.routes');
 
+// Connect to database
+connectDB();
+
 const app = express();
 
-let allowedOrigins = ['http://localhost:3000', 'https://thefolio-frontend-ten.vercel.app'];
+let allowedOrigins = ['http://localhost:3000', 'https://thefolio.vercel.app'];
 if (process.env.ALLOWED_ORIGINS) {
   allowedOrigins = process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim());
 }

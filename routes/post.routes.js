@@ -1,22 +1,19 @@
 // backend/routes/post.routes.js
 const express = require('express');
-// OLD: const Post = require('../models/Post');
-const pool = require('../config/db');
+const Post = require('../models/Post');
 const { protect } = require('../middleware/auth.middleware');
-const { memberOrAdmin } = require('../middleware/role.middleware');
+const { memberOrAdmin } = require('../middleware/auth.middleware');
 const upload = require('../middleware/upload');
 
 const router = express.Router();
 
 // GET /api/posts — Public: all published posts
-// OLD: Post.find({ status: 'published' }).populate('author', 'name profilePic') // NEW: SQL JOIN replaces .populate()
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT p.*, u.name AS author_name, u.profile_pic AS author_pic FROM posts p JOIN users u ON p.author_id = u.id
-      WHERE p.status = 'published' ORDER BY p.created_at DESC`
-    );
-    res.json(result.rows);
+    const posts = await Post.find({ status: 'published' })
+      .populate('author', 'name profile_pic')
+      .sort({ createdAt: -1 });
+    res.json(posts);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -25,12 +22,12 @@ router.get('/', async (req, res) => {
 // GET /api/posts/:id
 router.get('/:id', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT p.*, u.name AS author_name, u.profile_pic AS author_pic FROM posts p JOIN users u ON p.author_id = u.id
-      WHERE p.id = $1 AND p.status = 'published'`, [req.params.id]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ message: 'Post not found' });
-    res.json(result.rows[0]);
+    const post = await Post.findById(req.params.id)
+      .populate('author', 'name profile_pic');
+    if (!post || post.status !== 'published') {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    res.json(post);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -39,36 +36,89 @@ router.get('/:id', async (req, res) => {
 // GET /api/posts/mine — Authenticated user posts
 router.get('/mine', protect, memberOrAdmin, async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT p.*, u.name AS author_name, u.profile_pic AS author_pic
-      FROM posts p JOIN users u ON p.author_id = u.id
-      WHERE p.author_id = $1 ORDER BY p.created_at DESC`,
-      [req.user.id]
-    );
-    res.json(result.rows);
+    const posts = await Post.find({ author: req.user._id })
+      .populate('author', 'name profile_pic')
+      .sort({ createdAt: -1 });
+    res.json(posts);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// POST /api/posts
+// POST /api/posts — Create new post
 router.post('/', protect, memberOrAdmin, upload.single('image'), async (req, res) => {
   try {
     const { title, body } = req.body;
-    const image = req.file ? req.file.filename : '';
-    const result = await pool.query(
-      'INSERT INTO posts (title, body, image, author_id) VALUES ($1,$2,$3,$4) RETURNING *',[title, body, image, req.user.id]
-    );
-    const post = await pool.query(
-      `SELECT p.*, u.name AS author_name, u.profile_pic AS author_pic FROM posts p JOIN users u ON p.author_id = u.id WHERE p.id = $1`, [result.rows[0].id]
-    );
-    res.status(201).json(post.rows[0]);
+    const postData = {
+      title,
+      body,
+      author: req.user._id
+    };
+
+    if (req.file) {
+      postData.image = req.file.filename;
+    }
+
+    const post = await Post.create(postData);
+    await post.populate('author', 'name profile_pic');
+    res.status(201).json(post);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// PUT /api/posts/:id
+// PUT /api/posts/:id — Update post
+router.put('/:id', protect, memberOrAdmin, upload.single('image'), async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    // Check if user owns the post or is admin
+    if (post.author.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized to update this post' });
+    }
+
+    const { title, body } = req.body;
+    const updateData = { title, body };
+
+    if (req.file) {
+      updateData.image = req.file.filename;
+    }
+
+    const updatedPost = await Post.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+      runValidators: true
+    }).populate('author', 'name profile_pic');
+
+    res.json(updatedPost);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/posts/:id — Delete post
+router.delete('/:id', protect, memberOrAdmin, async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    // Check if user owns the post or is admin
+    if (post.author.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized to delete this post' });
+    }
+
+    await Post.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Post deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+module.exports = router;
 router.put('/:id', protect, memberOrAdmin, upload.single('image'), async (req, res) => {
   try {
     const post = await pool.query('SELECT * FROM posts WHERE id = $1', [req.params.id]);
